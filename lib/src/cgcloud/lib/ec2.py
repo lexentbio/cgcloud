@@ -193,6 +193,13 @@ _ec2_instance_types = [
     InstanceType( 'r3.4xlarge', 16, 52, 122, [ hvm ], 1, ssd, 320, True ),
     InstanceType( 'r3.8xlarge', 32, 104, 244, [ hvm ], 2, ssd, 320, True ),
 
+    InstanceType( 'r4.large', 2, 6.5, 15, [ hvm ], 0, None, 0, True ),
+    InstanceType( 'r4.xlarge', 4, 13, 30.5, [ hvm ], 0, None, 0, True ),
+    InstanceType( 'r4.2xlarge', 8, 26, 61, [ hvm ], 0, None, 0, True ),
+    InstanceType( 'r4.4xlarge', 16, 52, 122, [ hvm ], 0, None, 0, True ),
+    InstanceType( 'r4.8xlarge', 32, 104, 244, [ hvm ], 0, None, 0, True ),
+    InstanceType( 'r4.16xlarge', 64, 208, 488, [ hvm ], 0, None, 0, True ),
+
     InstanceType( 'i2.xlarge', 4, 14, 30.5, [ hvm ], 1, ssd, 800, False ),
     InstanceType( 'i2.2xlarge', 8, 27, 61, [ hvm ], 2, ssd, 800, False ),
     InstanceType( 'i2.4xlarge', 16, 53, 122, [ hvm ], 4, ssd, 800, False ),

@@ -10,7 +10,7 @@ from fabric.operations import run
 from cgcloud.core.box import fabric_task
 from cgcloud.core.cluster import ClusterBox, ClusterLeader, ClusterWorker
 from cgcloud.core.common_iam_policies import ec2_read_only_policy
-from cgcloud.core.generic_boxes import GenericUbuntuTrustyBox
+from cgcloud.core.generic_boxes import GenericUbuntuDefaultBox
 from cgcloud.core.mesos_box import MesosBox as CoreMesosBox
 from cgcloud.core.ubuntu_box import Python27UpdateUbuntuBox
 from cgcloud.fabric.operations import sudo, remote_open, pip, sudov
@@ -69,7 +69,7 @@ mesos_services = dict(
                            '$(cat /var/lib/mesos/slave_args)' ) ] )
 
 
-class MesosBoxSupport( GenericUbuntuTrustyBox, Python27UpdateUbuntuBox, CoreMesosBox ):
+class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMesosBox ):
     """
     A node in a Mesos cluster. Both slaves and masters are based on this initial setup. Those
     specific roles are determined at boot time. Worker nodes need to be passed the master's IP

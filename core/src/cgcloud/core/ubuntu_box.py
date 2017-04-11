@@ -5,6 +5,7 @@ import contextlib
 import csv
 import logging
 import urllib2
+from distutils.version import LooseVersion
 from StringIO import StringIO
 
 from fabric.operations import sudo, put, run
@@ -57,7 +58,7 @@ class UbuntuBox( AgentBox, CloudInitBox, RcLocalBox ):
     def _base_image( self, virtualization_type ):
         release = self.release( ).codename
         template = self.TemplateDict( release=release, purpose='server', release_type='release',
-                                      storage_type='ebs', arch='amd64', region=self.ctx.region,
+                                      storage_type='ebs-ssd', arch='amd64', region=self.ctx.region,
                                       hypervisor=virtualization_type )
         url = '%s/query/%s/server/released.current.txt' % (BASE_URL, release)
         matches = [ ]
@@ -71,6 +72,8 @@ class UbuntuBox( AgentBox, CloudInitBox, RcLocalBox ):
             for image in images:
                 if template.matches( image ):
                     matches.append( image )
+
+        # If we found multiple matches, pick the legacy match for backwards compatibility
         if len( matches ) < 1:
             raise self.NoSuchImageException(
                 "Can't find Ubuntu AMI for release %s and virtualization type %s" % (
@@ -149,7 +152,11 @@ class Python27UpdateUbuntuBox( UbuntuBox ):
     @fabric_task
     def _setup_package_repos( self ):
         super( Python27UpdateUbuntuBox, self )._setup_package_repos( )
-        sudo( 'add-apt-repository -y ppa:fkrull/deadsnakes-python2.7' )
+        available_python_version = run("apt-cache policy python | grep Candidate | cut -d ':' -f 2").strip()
+        if LooseVersion(available_python_version) < LooseVersion('2.7.8'):
+            sudo( 'add-apt-repository -y ppa:fkrull/deadsnakes-python2.7' )
+        else:
+            log.info( "Python version {} already detected.".format(available_python_version) )
 
     # FIXME: This should go some place else
 
@@ -161,4 +168,3 @@ class Python27UpdateUbuntuBox( UbuntuBox ):
         :rtype: tuple
         """
         return literal_eval( run( python + " -c 'import sys; print tuple(sys.version_info)'" ) )
-

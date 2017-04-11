@@ -12,6 +12,7 @@ def roles( ):
     from cgcloud.core.generic_boxes import (GenericCentos6Box,
                                             GenericUbuntuPreciseBox,
                                             GenericUbuntuTrustyBox,
+                                            GenericUbuntuXenialBox,
                                             GenericUbuntuVividBox,
                                             GenericFedora21Box,
                                             GenericFedora22Box)
@@ -46,5 +47,3 @@ def command_classes( ):
                                                RsyncClusterCommand,
                                                GrowClusterCommand)
     return __fail_deprecated( sorted( locals( ).values( ), key=lambda cls: cls.__name__ ) )
-
-

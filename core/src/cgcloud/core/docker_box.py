@@ -34,15 +34,20 @@ class DockerBox( UbuntuBox ):
 
     @fabric_task
     def _list_packages_to_install( self ):
+        codename = self.release( ).codename
         kernel = run( 'uname -r' )
         kernel_version = tuple( map( int, kernel.split( '.' )[ :2 ] ) )
         assert kernel_version >= (3, 10), \
             "Need at least kernel version 3.10, found '%s'." % kernel
-        kernel = run( 'uname -r' )
-        assert kernel.endswith( '-generic' ), \
+        # Support Generic and AWS optimized kernels
+        assert kernel.endswith( '-generic' ) or kernel.endswith( '-aws' ), \
             'Current kernel is not supported by the linux-image-extra-virtual package.'
         packages = super( DockerBox, self )._list_packages_to_install( )
-        packages += [ 'docker-engine=1.9.1-0~trusty', 'linux-image-extra-' + kernel, 'linux-image-extra-virtual' ]
+        packages += [ 'docker-engine' ]
+        # Install extra kernel modules for non-AWS optimized images. Required for
+        # AUFS support which is pre-compiled on AWS images.
+        if kernel.endswith( '-generic' ):
+            packages += [ 'linux-image-extra-' + kernel , 'linux-image-extra-virtual' ]
         if run( 'cat /sys/module/apparmor/parameters/enabled' ).lower( ).startswith( 'y' ):
             packages += [ 'apparmor' ]
         return packages

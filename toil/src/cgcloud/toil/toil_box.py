@@ -44,6 +44,19 @@ class ToilBoxSupport( MesosBoxSupport, DockerBox, ClusterBox ):
         # We prefer Docker to be stored on the persistent volume if there is one
         return concat( persistent_dir, super( ToilBoxSupport, self )._docker_data_prefixes( ) )
 
+    def _docker_patch_heredoc( self ):
+        return heredoc( """
+        --- docker.conf	2017-04-03 17:17:44.000000000 +0000
+        +++ docker.conf.new	2017-04-11 01:24:58.898974558 +0000
+        @@ -1,6 +1,6 @@
+         description "Docker daemon"
+
+        -start on (filesystem and net-device-up IFACE!=lo)
+        +start on (filesystem and net-device-up IFACE!=lo and started mesosbox)
+         stop on runlevel [!2345]
+
+         limit nofile 524288 1048576""" )
+
     @fabric_task
     def _setup_docker( self ):
         super( ToilBoxSupport, self )._setup_docker( )
@@ -51,17 +64,7 @@ class ToilBoxSupport( MesosBoxSupport, DockerBox, ClusterBox ):
         # mesosbox job. Adding a dependency of the docker job on mesosbox should satsify that
         # dependency.
         with remote_sudo_popen( 'patch -d /etc/init' ) as patch:
-            patch.write( heredoc( """
-                --- docker.conf.orig	2015-12-18 23:28:48.693072560 +0000
-                +++ docker.conf	2015-12-18 23:40:30.553072560 +0000
-                @@ -1,6 +1,6 @@
-                 description "Docker daemon"
-
-                -start on (local-filesystems and net-device-up IFACE!=lo)
-                +start on (local-filesystems and net-device-up IFACE!=lo and started mesosbox)
-                 stop on runlevel [!2345]
-                 limit nofile 524288 1048576
-                 limit nproc 524288 1048576""" ) )
+            patch.write( self._docker_patch_heredoc( ) )
 
     def _enable_agent_metrics( self ):
         return True

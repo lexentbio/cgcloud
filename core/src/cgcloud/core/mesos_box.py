@@ -32,10 +32,10 @@ class MesosBox( UbuntuBox ):
 
     def _post_install_packages( self ):
         super( MesosBox, self )._post_install_packages( )
-        self.__install_mesos_egg( )
+        self._install_mesos_egg( )
 
     @fabric_task
-    def __install_mesos_egg( self ):
+    def _install_mesos_egg( self ):
         egg = 'mesos-' + self._mesos_egg_version( ) + '-py2.7-linux-x86_64.egg'
         version = self.release( ).version
         run( fmt( 'wget http://downloads.mesosphere.io/master/ubuntu/{version}/{egg}' ) )

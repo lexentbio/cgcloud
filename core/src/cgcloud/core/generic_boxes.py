@@ -199,6 +199,16 @@ class GenericUbuntuTrustyBox( UpstartUbuntuBox ):
         return self.Release( codename='trusty', version='14.04' )
 
 
+class GenericUbuntuXenialBox( SystemdUbuntuBox ):
+    """
+    Generic box with Ubuntu 16.04 LTS (EOL April 2021)
+    """
+    def release( self ):
+        return self.Release( codename='xenial', version='16.04' )
+
+class GenericUbuntuDefaultBox ( GenericUbuntuTrustyBox ):
+    pass
+
 @deprecated
 class GenericUbuntuUtopicBox( UpstartUbuntuBox ):
     def release( self ):

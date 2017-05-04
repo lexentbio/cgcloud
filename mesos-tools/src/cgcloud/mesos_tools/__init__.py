@@ -21,8 +21,6 @@ from boto.ec2.instance import Instance
 from cgcloud.lib.ec2 import EC2VolumeHelper
 from cgcloud.lib.util import volume_label_hash
 
-initctl = '/sbin/initctl'
-
 sudo = '/usr/bin/sudo'
 
 log = logging.getLogger( __name__ )
@@ -94,7 +92,17 @@ class MesosTools( object ):
             self.__prepare_slave_args( )
 
         log.info( "Starting %s services" % node_type )
-        check_call( [ initctl, 'emit', 'mesosbox-start-%s' % node_type ] )
+        self.start_service( 'mesosbox-%s' % node_type )
+
+    def start_service ( self, name ):
+        # Start service based on default init system: systemd or upstart
+        initctl = '/sbin/initctl'
+        systemctl = '/bin/systemctl'
+
+        if os.path.exists('/run/systemd/system/'):
+            check_call( [ systemctl, 'start', name ] )
+        else:
+            check_call( [ initctl, 'emit', name ] )
 
     def stop( self ):
         """
@@ -355,7 +363,7 @@ class MesosTools( object ):
         self.__patch_etc_hosts( hosts )
 
     def __patch_etc_hosts( self, hosts ):
-        log.info( "Patching /etc/host" )
+        log.info( "Patching /etc/hosts" )
         # FIXME: The handling of /etc/hosts isn't atomic
         with open( '/etc/hosts', 'r+' ) as etc_hosts:
             lines = [ line

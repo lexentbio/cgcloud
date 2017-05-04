@@ -70,6 +70,7 @@ class SystemdBox( AbstractInitBox ):
         path = '/lib/systemd/system/%s.service' % name
         put( local_path=StringIO( script ), remote_path=path, use_sudo=True )
         sudo( "chown root:root '%s'" % path )
+        sudo( "systemctl daemon-reload" )
 
     @fabric_task
     def _run_init_script( self, name, command='start' ):

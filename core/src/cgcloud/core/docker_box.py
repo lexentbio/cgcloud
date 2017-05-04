@@ -1,7 +1,8 @@
 import logging
 from pipes import quote
+from StringIO import StringIO
 
-from fabric.operations import run
+from fabric.operations import run, put
 
 from bd2k.util.strings import interpolate as fmt
 
@@ -69,6 +70,58 @@ class DockerBox( UbuntuBox ):
         prefixes = self._docker_data_prefixes( )
         if prefixes:
             prefixes = ' '.join( map( quote, prefixes ) )
+            setup_docker_script = heredoc( """
+                #!/bin/sh
+                echo
+                echo "This is the dockerbox pre-start script"
+                set -ex
+                if mountpoint -q /var/lib/docker; then
+                    echo "The directory '/var/lib/docker' is already mounted, exiting."
+                else
+                    for prefix in {prefixes}; do
+                        # Prefix must refer to a separate volume, e.g. ephemeral or EBS
+                        if mountpoint -q "$prefix"; then
+                            # Make sure Docker's aufs backend isn't mounted anymore
+                            umount /var/lib/docker/aufs || true
+                            if test -d "$prefix/var/lib/docker"; then
+                                echo "The directory '$prefix/var/lib/docker' already exists, using it."
+                            else
+                                mkdir -p "$prefix/var/lib"
+                                # If /var/lib/docker contains files ...
+                                if python -c 'import os, sys; sys.exit( 0 if os.listdir( sys.argv[1] ) else 1 )' /var/lib/docker; then
+                                    # ... move it to prefix ...
+                                    mv /var/lib/docker "$prefix/var/lib"
+                                    # ... and recreate it as an empty mount point, ...
+                                    mkdir -p /var/lib/docker
+                                else
+                                    # ... otherwise untar the initial backup.
+                                    tar -xzC "$prefix/var/lib" < /var/lib/docker.tar.gz
+                                fi
+                            fi
+                            # Now bind-mount into /var/lib/docker
+                            mount --bind "$prefix/var/lib/docker" /var/lib/docker
+                            break
+                        else
+                            echo "The prefix directory '$prefix' is not a mount point, skipping."
+                        fi
+                    done
+                fi""" )
+
+            dockerbox_path = '/usr/sbin/dockerbox-setup.sh'
+            systemd_heredoc = heredoc( """
+                [Unit]
+                Description=Placement of /var/lib/docker
+                Requires=docker.service
+                After=docker.service
+
+                [Service]
+                Type=simple
+                ExecStart={dockerbox_path}
+
+                [Install]
+                WantedBy=docker.service
+            """)
+
             self._run_init_script( 'docker', 'stop' )
             # Make sure Docker's aufs backend isn't mounted anymore
             sudo( 'umount /var/lib/docker/aufs', warn_only=True )
@@ -76,47 +129,12 @@ class DockerBox( UbuntuBox ):
             sudo( 'tar -czC /var/lib docker > /var/lib/docker.tar.gz' )
             # Then delete it and recreate it as an empty directory to serve as the bind mount point
             sudo( 'rm -rf /var/lib/docker && mkdir /var/lib/docker' )
+
+            # Pick the init script based on system settings
+            put( local_path=StringIO( setup_docker_script ), remote_path=dockerbox_path, use_sudo=True )
+            sudo( "chown root:root '%s'" % dockerbox_path )
+            sudo( "chmod +x '%s'" % dockerbox_path )
             self._register_init_script(
                 'dockerbox',
-                heredoc( """
-                    description "Placement of /var/lib/docker"
-                    console log
-                    start on starting docker
-                    stop on stopped docker
-                    pre-start script
-                        echo
-                        echo "This is the dockerbox pre-start script"
-                        set -ex
-                        if mountpoint -q /var/lib/docker; then
-                            echo "The directory '/var/lib/docker' is already mounted, exiting."
-                        else
-                            for prefix in {prefixes}; do
-                                # Prefix must refer to a separate volume, e.g. ephemeral or EBS
-                                if mountpoint -q "$prefix"; then
-                                    # Make sure Docker's aufs backend isn't mounted anymore
-                                    umount /var/lib/docker/aufs || true
-                                    if test -d "$prefix/var/lib/docker"; then
-                                        echo "The directory '$prefix/var/lib/docker' already exists, using it."
-                                    else
-                                        mkdir -p "$prefix/var/lib"
-                                        # If /var/lib/docker contains files ...
-                                        if python -c 'import os, sys; sys.exit( 0 if os.listdir( sys.argv[1] ) else 1 )' /var/lib/docker; then
-                                            # ... move it to prefix ...
-                                            mv /var/lib/docker "$prefix/var/lib"
-                                            # ... and recreate it as an empty mount point, ...
-                                            mkdir -p /var/lib/docker
-                                        else
-                                            # ... otherwise untar the initial backup.
-                                            tar -xzC "$prefix/var/lib" < /var/lib/docker.tar.gz
-                                        fi
-                                    fi
-                                    # Now bind-mount into /var/lib/docker
-                                    mount --bind "$prefix/var/lib/docker" /var/lib/docker
-                                    break
-                                else
-                                    echo "The prefix directory '$prefix' is not a mount point, skipping."
-                                fi
-                            done
-                        fi
-                    end script""" ) )
+                systemd_heredoc )
             self._run_init_script( 'docker', 'start' )

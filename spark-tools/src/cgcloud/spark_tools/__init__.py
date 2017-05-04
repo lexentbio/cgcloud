@@ -444,7 +444,7 @@ class SparkTools( object ):
         self.__patch_etc_hosts( hosts )
 
     def __patch_etc_hosts( self, hosts ):
-        log.info( "Patching /etc/host" )
+        log.info( "Patching /etc/hosts" )
         # FIXME: The handling of /etc/hosts isn't atomic
         with open( '/etc/hosts', 'r+' ) as etc_hosts:
             lines = [ line

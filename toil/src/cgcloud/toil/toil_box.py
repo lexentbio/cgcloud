@@ -28,7 +28,7 @@ class ToilBoxSupport( MesosBoxSupport, DockerBox, ClusterBox ):
     def _list_packages_to_install( self ):
         return super( ToilBoxSupport, self )._list_packages_to_install( ) + [
             'python-dev', 'gcc', 'make',
-            'libcurl4-openssl-dev',  # Only for S3AM
+            'libssl-dev', # Only for S3AM
             'libffi-dev' ]  # pynacl -> toil, Azure client-side encryption
 
     def _post_install_mesos( self ):
@@ -46,25 +46,27 @@ class ToilBoxSupport( MesosBoxSupport, DockerBox, ClusterBox ):
 
     def _docker_patch_heredoc( self ):
         return heredoc( """
-        --- docker.conf	2017-04-03 17:17:44.000000000 +0000
-        +++ docker.conf.new	2017-04-11 01:24:58.898974558 +0000
-        @@ -1,6 +1,6 @@
-         description "Docker daemon"
+            --- docker.service.orig	2017-04-12 20:45:15.899906518 +0000
+            +++ docker.service	2017-04-12 20:42:57.186495824 +0000
+            @@ -3,6 +3,8 @@
+             Documentation=https://docs.docker.com
+             After=network-online.target docker.socket firewalld.service
+             Wants=network-online.target
+            +After=mesosbox.service
+            +Requires=mesosbox.service
+             Requires=docker.socket
 
-        -start on (filesystem and net-device-up IFACE!=lo)
-        +start on (filesystem and net-device-up IFACE!=lo and started mesosbox)
-         stop on runlevel [!2345]
-
-         limit nofile 524288 1048576""" )
+             [Service]""" )
 
     @fabric_task
     def _setup_docker( self ):
-        super( ToilBoxSupport, self )._setup_docker( )
         # The docker and dockerbox init jobs depend on /mnt/persistent which is set up by the
         # mesosbox job. Adding a dependency of the docker job on mesosbox should satsify that
         # dependency.
-        with remote_sudo_popen( 'patch -d /etc/init' ) as patch:
+        super( ToilBoxSupport, self )._setup_docker( )
+        with remote_sudo_popen( 'patch -d /lib/systemd/system' ) as patch:
             patch.write( self._docker_patch_heredoc( ) )
+            sudo ( "systemctl daemon-reload")
 
     def _enable_agent_metrics( self ):
         return True

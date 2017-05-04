@@ -1,6 +1,7 @@
 import logging
 from collections import namedtuple
 from pipes import quote
+from StringIO import StringIO
 
 from bd2k.util.iterables import concat
 from bd2k.util.strings import interpolate as fmt
@@ -13,7 +14,7 @@ from cgcloud.core.common_iam_policies import ec2_read_only_policy
 from cgcloud.core.generic_boxes import GenericUbuntuDefaultBox
 from cgcloud.core.mesos_box import MesosBox as CoreMesosBox
 from cgcloud.core.ubuntu_box import Python27UpdateUbuntuBox
-from cgcloud.fabric.operations import sudo, remote_open, pip, sudov
+from cgcloud.fabric.operations import sudo, remote_open, pip, sudov, put
 from cgcloud.lib.util import abreviated_snake_case_class_name, heredoc
 
 log = logging.getLogger( __name__ )
@@ -32,26 +33,28 @@ work_dir = '/var/lib/mesos'
 
 Service = namedtuple( 'Service', [
     'init_name',
+    'user',
     'description',
     'command' ] )
 
 
-def mesos_service( name, *flags ):
+def mesos_service( name, user, *flags ):
     command = concat( '/usr/sbin/mesos-{name}', '--log_dir={log_dir}/mesos', flags )
     return Service(
         init_name='mesosbox-' + name,
+        user=user,
         description=fmt( 'Mesos {name} service' ),
         command=fmt( ' '.join( command ) ) )
 
 
 mesos_services = dict(
-    master=[ mesos_service( 'master',
+    master=[ mesos_service( 'master', user,
                             '--registry=in_memory',
                             # would use "--ip mesos-master" here but that option only supports
                             # IP addresses, not DNS names or /etc/hosts entries
                             '--ip_discovery_command="hostname -i"',
                             '--credentials=/etc/mesos/credentials' ) ],
-    slave=[ mesos_service( 'slave',
+    slave=[ mesos_service( 'slave', 'root',
                            '--master=mesos-master:5050',
                            '--no-switch_user',
                            '--work_dir=' + work_dir,
@@ -166,11 +169,10 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
 
     @fabric_task
     def __setup_mesos( self ):
-        sudo( "rm /etc/init/mesos-{master,slave}.conf" )
         self._lazy_mkdir( log_dir, 'mesos', persistent=False )
         self._lazy_mkdir( '/var/lib', 'mesos', persistent=True )
         self.__prepare_credentials( )
-        self.__register_upstart_jobs( mesos_services )
+        self.__register_systemd_jobs( mesos_services )
         self._post_install_mesos( )
 
     def _post_install_mesos( self ):
@@ -211,14 +213,23 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
 
         self.lazy_dirs = None  # make sure it can't be used anymore once we are done with it
 
-        self._register_init_script(
-            "mesosbox",
-            heredoc( """
-                description "Mesos master discovery"
-                console log
-                start on (local-filesystems and net-device-up IFACE!=lo)
-                stop on runlevel [!2345]
-                pre-start script
+        mesosbox_start_path = '/usr/sbin/mesosbox-start.sh'
+        mesosbox_stop_path = '/usr/sbin/mesosbox-stop.sh'
+        systemd_heredoc = heredoc( """
+            [Unit]
+            Description=Mesos master discovery
+            Requires=networking.service network-online.target
+            After=networking.service network-online.target
+
+            [Service]
+            Type=simple
+            ExecStart={mesosbox_start_path}
+            RemainAfterExit=true
+            ExecStop={mesosbox_stop_path}
+            """ )
+
+        mesosbox_setup_start_script = heredoc( """
+                #!/bin/sh
                 for i in 1 2 3; do if {tools_dir}/bin/python2.7 - <<END
                 import logging
                 logging.basicConfig( level=logging.INFO )
@@ -226,17 +237,27 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
                 mesos_tools = {mesos_tools}
                 mesos_tools.start()
                 END
-                then exit 0; fi; echo Retrying in 60s; sleep 60; done; exit 1
-                end script
-                post-stop script
-                {tools_dir}/bin/python2.7 - <<END
+                then exit 0; fi; echo Retrying in 60s; sleep 60; done; exit 1""" )
+
+        mesosbox_setup_stop_script = heredoc ("""
+                #!/{tools_dir}/bin/python2.7
                 import logging
                 logging.basicConfig( level=logging.INFO )
                 from cgcloud.mesos_tools import MesosTools
                 mesos_tools = {mesos_tools}
-                mesos_tools.stop()
-                END
-                end script""" ) )
+                mesos_tools.stop()""" )
+
+        put( local_path=StringIO( mesosbox_setup_start_script ), remote_path=mesosbox_start_path, use_sudo=True )
+        sudo( "chown root:root '%s'" % mesosbox_start_path )
+        sudo( "chmod +x '%s'" % mesosbox_start_path )
+
+        put( local_path=StringIO( mesosbox_setup_stop_script ), remote_path=mesosbox_stop_path, use_sudo=True )
+        sudo( "chown root:root '%s'" % mesosbox_stop_path )
+        sudo( "chmod +x '%s'" % mesosbox_stop_path )
+
+        self._register_init_script(
+            "mesosbox",
+            systemd_heredoc )
         # Explicitly start the mesosbox service to achieve creation of lazy directoriess right
         # now. This makes a generic mesosbox useful for adhoc tests that involve Mesos and Toil.
         self._run_init_script( 'mesosbox' )
@@ -267,26 +288,33 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
         self.lazy_dirs.add( (parent, name, persistent) )
         return logical_path
 
-    def __register_upstart_jobs( self, service_map ):
+    def __register_systemd_jobs( self, service_map ):
         for node_type, services in service_map.iteritems( ):
-            start_on = "mesosbox-start-" + node_type
             for service in services:
+                service_command_path = '/usr/sbin/mesosbox-%s-start.sh' % service.init_name
+
+                put( local_path=StringIO( "#!/bin/sh\n" + service.command ), remote_path=service_command_path, use_sudo=True )
+                sudo( "chown root:root '%s'" % service_command_path )
+                sudo( "chmod +x '%s'" % service_command_path )
+
                 self._register_init_script(
                     service.init_name,
                     heredoc( """
-                        description "{service.description}"
-                        console log
-                        start on {start_on}
-                        stop on runlevel [016]
-                        respawn
-                        umask 022
-                        limit nofile 8000 8192
-                        setuid {user}
-                        setgid {user}
-                        env USER={user}
-                        exec {service.command}""" ) )
-                start_on = "started " + service.init_name
+                        [Unit]
+                        Description={service.description}
+                        Before=docker.service
+                        Wants=docker.service
+                        Requires=mesosbox.service
+                        After=mesosbox.service
 
+                        [Service]
+                        Type=simple
+                        ExecStart={service_command_path}
+                        User={service.user}
+                        Group={service.user}
+                        Environment="USER={user}"
+                        LimitNOFILE=8000:8192
+                        UMask=022""" ) )
 
 class MesosBox( MesosBoxSupport, ClusterBox ):
     """

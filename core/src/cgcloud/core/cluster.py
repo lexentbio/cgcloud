@@ -138,7 +138,8 @@ class ClusterWorker( ClusterBox ):
 
     def _set_instance_options( self, options ):
         super( ClusterWorker, self )._set_instance_options( options )
-        self.leader_instance_id = options.get( 'leader_instance_id' )
+        self.leader_instance_id = options.get( 'leader_instance_id', '' )
+
         if self.cluster_name is None:
             self.cluster_name = self.leader_instance_id
 

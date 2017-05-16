@@ -226,6 +226,9 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
             ExecStart={mesosbox_start_path}
             RemainAfterExit=true
             ExecStop={mesosbox_stop_path}
+
+            [Install]
+            WantedBy=multi-user.target
             """ )
 
         mesosbox_setup_start_script = heredoc( """
@@ -258,6 +261,10 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
         self._register_init_script(
             "mesosbox",
             systemd_heredoc )
+
+        # Enable mesosbox to start on boot
+        sudo( "systemctl enable mesosbox" )
+
         # Explicitly start the mesosbox service to achieve creation of lazy directoriess right
         # now. This makes a generic mesosbox useful for adhoc tests that involve Mesos and Toil.
         self._run_init_script( 'mesosbox' )
@@ -291,7 +298,7 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
     def __register_systemd_jobs( self, service_map ):
         for node_type, services in service_map.iteritems( ):
             for service in services:
-                service_command_path = '/usr/sbin/mesosbox-%s-start.sh' % service.init_name
+                service_command_path = '/usr/sbin/%s-start.sh' % service.init_name
 
                 put( local_path=StringIO( "#!/bin/sh\n" + service.command ), remote_path=service_command_path, use_sudo=True )
                 sudo( "chown root:root '%s'" % service_command_path )
@@ -314,7 +321,11 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
                         Group={service.user}
                         Environment="USER={user}"
                         LimitNOFILE=8000:8192
-                        UMask=022""" ) )
+                        UMask=022
+
+                        [Install]
+                        WantedBy=multi-user.target
+                        """ ) )
 
 class MesosBox( MesosBoxSupport, ClusterBox ):
     """

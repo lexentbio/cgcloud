@@ -129,6 +129,20 @@ class MesosBoxSupport( GenericUbuntuDefaultBox, Python27UpdateUbuntuBox, CoreMes
                    '--user-group '
                    '--shell /bin/bash {user}' ) )
 
+        sudoer_file = heredoc( """
+            # CGcloud - MesosBox
+
+            # User rules for ubuntu
+            mesosbox ALL=(ALL) NOPASSWD:ALL
+
+            # User rules for ubuntu
+            mesosbox ALL=(ALL) NOPASSWD:ALL
+            """ )
+
+        sudoer_file_path = '/etc/sudoers.d/89-mesosbox-user'
+        put( local_path=StringIO( sudoer_file ), remote_path=sudoer_file_path, use_sudo=True, mode=0440 )
+        sudo( "chown root:root '%s'" % sudoer_file_path )
+
     def _post_install_packages( self ):
         super( MesosBoxSupport, self )._post_install_packages( )
         self._propagate_authorized_keys( user, user )
